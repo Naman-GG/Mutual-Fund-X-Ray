@@ -1,0 +1,8 @@
+langgraph
+langchain
+langchain-core
+streamlit
+pandas
+plotly
+casparser
+pydantic
