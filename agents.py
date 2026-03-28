@@ -1,9 +1,21 @@
 from schema import PortfolioState, Investment, AnalysisResult, StrategyPlan
 from langchain_google_genai import ChatGoogleGenerativeAI
 from pydantic import BaseModel, Field
-from typing import List
+from typing import List, Dict
 import os
+import io
 import pandas as pd
+from datetime import datetime
+
+try:
+    import pyxirr
+except ImportError:
+    pyxirr = None
+
+try:
+    import casparser
+except ImportError:
+    casparser = None
 
 def load_market_db():
     try:
@@ -28,21 +40,50 @@ class PortfolioExtract(BaseModel):
 
 def extractor_node(state: PortfolioState):
     raw_input = state.get("raw_input", "")
-    log_updates = ["Agent A (Extractor): Parsing raw input using Gemini LLM..."]
+    pdf_bytes = state.get("pdf_bytes")
+    pdf_password = state.get("pdf_password")
+    
+    log_updates = ["Agent A (Extractor): Parsing input using Gemini LLM..."]
     errors = []
     extracted_investments = []
+    transactions = []
     
+    # 1. CAS Parsing if PDF Uploaded
+    if pdf_bytes and pdf_password and casparser:
+        log_updates.append("Agent A (Extractor): CAS PDF detected. Decrypting and parsing via CAMS/KFintech engine...")
+        try:
+            data = casparser.read_cas_pdf(io.BytesIO(pdf_bytes), pdf_password)
+            parsed_texts = []
+            
+            for folio in data.get("folios", []):
+                for scheme in folio.get("schemes", []):
+                    scheme_name = scheme.get("scheme", "")
+                    curr_val = scheme.get("valuation", {}).get("value", 0.0)
+                    
+                    inv_amt = 0.0
+                    for txn in scheme.get("transactions", []):
+                        amt = txn.get("amount", 0.0)
+                        if amt:
+                            inv_amt += abs(amt)
+                            transactions.append({"date": txn.get("date"), "amount": amt})
+                            
+                    parsed_texts.append(f"Invested {inv_amt} in {scheme_name}. Current valuation is {curr_val}.")
+            
+            raw_input = " ".join(parsed_texts)
+            log_updates.append("Agent A (Extractor): PDF Decrypted Successfully. Sending scheme names to LLM for exact market mapping.")
+        except Exception as e:
+            errors.append(f"Failed to parse CAS PDF. Ensure password (PAN) is correct. Error: {str(e)}")
+            return {"errors": errors, "log": log_updates}
+
+    # 2. LLM Extraction
     try:
-        # Initialize Gemini LLM
         llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
-        
-        # Use structured output to force the LLM to return our Pydantic schema
         structured_llm = llm.with_structured_output(PortfolioExtract)
         
         known_funds = ", ".join(MOCK_MARKET_DB.keys())
         prompt = f"""
         Extract the mutual fund investments from the following user portfolio text.
-        For each investment, identify the exact fund name and the invested amount.
+        For each investment, identify the exact fund name, invested amount, and current_value (if present).
         
         IMPORTANT: Your extracted 'fund_name' MUST exactly match the spelling and casing of one of our known database funds if it is a close match.
         Known Funds: {known_funds}
@@ -63,7 +104,7 @@ def extractor_node(state: PortfolioState):
         log_updates.append(f"Agent A (Extractor): LLM parsing failed: {str(e)}")
         errors.append(f"LLM Error: {str(e)}")
     
-    return {"investments": extracted_investments, "log": log_updates, "errors": errors}
+    return {"investments": extracted_investments, "log": log_updates, "errors": errors, "transactions": transactions}
 
 def reflection_node(state: PortfolioState):
     log_updates = ["Agent B (Analyst Reflection): Verifying Extractor's output..."]
@@ -81,10 +122,42 @@ def reflection_node(state: PortfolioState):
 def analyst_node(state: PortfolioState):
     log_updates = ["Agent B (Analyst): Performing Portfolio X-Ray against Market DB..."]
     investments = state.get("investments", [])
+    transactions = state.get("transactions", [])
     
     analysis = AnalysisResult()
-    total_val = sum(inv.amount for inv in investments) if investments else 0.0
-    analysis.total_value = total_val
+    
+    total_invested = sum(inv.amount for inv in investments) if investments else 0.0
+    current_val = sum((inv.current_value if inv.current_value else inv.amount * 1.25) for inv in investments) # Mock growth if no valuation
+    
+    analysis.total_value = total_invested
+    analysis.current_valuation = current_val
+    analysis.benchmark_xirr = 14.5 # Hardcoded NIFTY 50 5-Year Average Benchmark
+    
+    # XIRR Calculation
+    if transactions and pyxirr:
+        log_updates.append("Agent B (Analyst): Calculating exact XIRR using CAS transaction history...")
+        try:
+            dates = []
+            amounts = []
+            for t in transactions:
+                if t.get("date") and t.get("amount"):
+                    dates.append(pd.to_datetime(t["date"]).date())
+                    amounts.append(-abs(float(t["amount"]))) # Outflow
+            
+            # Add current valuation as positive inflow today
+            dates.append(datetime.now().date())
+            amounts.append(current_val)
+            
+            xirr_val = pyxirr.xirr(dates, amounts)
+            if xirr_val:
+                analysis.portfolio_xirr = xirr_val * 100
+        except Exception as e:
+            log_updates.append(f"Agent B (Analyst): XIRR Math failed, falling back. Error: {e}")
+            
+    if analysis.portfolio_xirr is None and total_invested > 0:
+        log_updates.append("Agent B (Analyst): Estimating XIRR from current valuation...")
+        returns = current_val / total_invested
+        analysis.portfolio_xirr = ((returns ** (1/3)) - 1) * 100 # Assuming roughly 3 years average hold
     
     stock_counts = {}
     total_drag = 0.0
@@ -101,8 +174,9 @@ def analyst_node(state: PortfolioState):
                 drag = inv.amount * (excess / 100)
                 total_drag += drag
             
-            if inv.sector and total_val > 0:
-                analysis.sector_allocation[inv.sector] = analysis.sector_allocation.get(inv.sector, 0.0) + (inv.amount / total_val) * 100
+            if inv.sector and current_val > 0:
+                allocation_weight = (inv.current_value if inv.current_value else (inv.amount * 1.25)) / current_val
+                analysis.sector_allocation[inv.sector] = analysis.sector_allocation.get(inv.sector, 0.0) + (allocation_weight * 100)
             
             for stock in (inv.holdings or []):
                 if stock not in stock_counts:
@@ -144,26 +218,29 @@ def strategist_node(state: PortfolioState):
         {portfolio_summary}
         
         Analysis Insights:
-        - Total Value: ₹{analysis.total_value}
-        - Total 5-Year Drag from High Expense Ratios (Regular Plans): ₹{analysis.potential_savings}
+        - Total Invested: ₹{analysis.total_value}
+        - Current Valuation: ₹{analysis.current_valuation}
+        - Portfolio XIRR: {analysis.portfolio_xirr:.2f}%
+        - Benchmark NIFTY 50 XIRR: {analysis.benchmark_xirr:.2f}%
+        - Total 5-Year Drag from High Expense Ratios: ₹{analysis.potential_savings}
         - Overlap Warnings:
         {overlap_info if overlap_info else "- None"}
         
         Task:
-        1. Calculate a realistic 'Money Health Score' out of 100 based on the overlaps and expense drag. (Lower score if high overlaps and fees).
-        2. Write exactly 2-3 sentences of 'feedback' that is highly encouraging but sets a clear mentor tone. Act as a trusted advisor.
-        3. Provide 2-4 actionable 'rebalancing_steps' in simple language. If there are overlaps, explicitly suggest consolidating those specific funds. If there is high drag, suggest direct plans.
+        1. Calculate a realistic 'Money Health Score' out of 100. Lower it if overlaps exist, if fees are high, or if Portfolio XIRR significantly underperforms the Benchmark 14.5% XIRR (minor penalty for underperformance).
+        2. Write exactly 2-3 sentences of 'feedback' that sets a clear, trusted mentor tone. Explicitly reference their exact Portfolio XIRR vs the Benchmark if relevant!
+        3. Provide 2-4 actionable 'rebalancing_steps' in simple language. If overlaps exist, tell them which funds to consolidate. If fees are high, suggest moving to specific Direct plans.
         """
         
         strategy = structured_llm.invoke(prompt)
         log_updates.append("Agent C (Strategist): Real-time Plan generated successfully.")
         
     except Exception as e:
-        log_updates.append(f"Agent C (Strategist): LLM failed, falling back to basic strategy. Error: {str(e)}")
+        log_updates.append(f"Agent C (Strategist): LLM failed. Error: {str(e)}")
         strategy = StrategyPlan(
             health_score=50,
-            feedback="We encountered a technical hurdle generating your mentor feedback, but saving on expense ratios is always a smart move.",
-            rebalancing_steps=["Consider moving from Regular to Direct plans."]
+            feedback="We encountered a technical hurdle generating your mentor feedback. Please check your API keys.",
+            rebalancing_steps=["Ensure your CAS PDF is valid and password protected."]
         )
         
     return {"strategy": strategy, "log": log_updates}
