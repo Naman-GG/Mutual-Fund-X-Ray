@@ -20,7 +20,7 @@ Follow these steps exactly to deploy ET MoneyMentor Pro optimally on your local 
 Clone the project directly from GitHub and enter the local directory.
 ```bash
 git clone <your-repository-url>
-cd ET_GenAI
+cd Mutual-Fund-X-Ray
 ```
 
 ### 2. Set Up a Virtual Environment (Highly Recommended)
