@@ -1,8 +1,11 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+from dotenv import load_dotenv
 from workflow import build_workflow
 from schema import PortfolioState
+
+load_dotenv(override=True)
 
 # Economic Times Brand Colors Setup
 ET_BLUE = "#003366"

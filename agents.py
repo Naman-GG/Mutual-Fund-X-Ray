@@ -1,5 +1,7 @@
 from schema import PortfolioState, Investment, AnalysisResult, StrategyPlan
-
+from langchain_google_genai import ChatGoogleGenerativeAI
+from pydantic import BaseModel, Field
+from typing import List
 import os
 import pandas as pd
 
@@ -21,26 +23,42 @@ def load_market_db():
 
 MOCK_MARKET_DB = load_market_db()
 
+class PortfolioExtract(BaseModel):
+    investments: List[Investment] = Field(description="List of extracted investments")
+
 def extractor_node(state: PortfolioState):
     raw_input = state.get("raw_input", "")
-    log_updates = ["Agent A (Extractor): Parsing raw input to extract mutual fund data..."]
+    log_updates = ["Agent A (Extractor): Parsing raw input using Gemini LLM..."]
     errors = []
     extracted_investments = []
     
-    if "SBI Bluechip" in raw_input:
-        extracted_investments.append(Investment(fund_name="SBI Bluechip", amount=50000.0))
-    if "HDFC Top 100" in raw_input:
-        extracted_investments.append(Investment(fund_name="HDFC Top 100", amount=75000.0))
-    if "Axis Midcap" in raw_input:
-        extracted_investments.append(Investment(fund_name="Axis Midcap", amount=30000.0))
-    if "Parag Parikh Flexi Cap" in raw_input:
-        extracted_investments.append(Investment(fund_name="Parag Parikh Flexi Cap", amount=45000.0))
-
-    if not extracted_investments:
-        log_updates.append("Agent A (Extractor): Failed to extract valid funds from input.")
-        errors.append("No valid funds found.")
-    else:
-        log_updates.append(f"Agent A (Extractor): Successfully extracted {len(extracted_investments)} funds.")
+    try:
+        # Initialize Gemini LLM
+        llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
+        
+        # Use structured output to force the LLM to return our Pydantic schema
+        structured_llm = llm.with_structured_output(PortfolioExtract)
+        
+        prompt = f"""
+        Extract the mutual fund investments from the following user portfolio text.
+        For each investment, identify the exact fund name and the invested amount.
+        If the fund name matches something closely in the market, normalize it lightly but keep it accurate.
+        
+        User Text: {raw_input}
+        """
+        
+        result = structured_llm.invoke(prompt)
+        extracted_investments = result.investments
+        
+        if not extracted_investments:
+            log_updates.append("Agent A (Extractor): Failed to extract valid funds from input.")
+            errors.append("No valid funds found.")
+        else:
+            log_updates.append(f"Agent A (Extractor): Successfully extracted {len(extracted_investments)} funds.")
+            
+    except Exception as e:
+        log_updates.append(f"Agent A (Extractor): LLM parsing failed: {str(e)}")
+        errors.append(f"LLM Error: {str(e)}")
     
     return {"investments": extracted_investments, "log": log_updates, "errors": errors}
 
@@ -99,35 +117,49 @@ def analyst_node(state: PortfolioState):
     return {"analysis": analysis, "log": log_updates, "investments": investments}
 
 def strategist_node(state: PortfolioState):
-    log_updates = ["Agent C (Strategist): Generating personalized rebalancing plan..."]
-    score = 100
-    steps = []
+    log_updates = ["Agent C (Strategist): Generating personalized rebalancing plan using Gemini LLM..."]
     
     analysis = state.get("analysis")
-    if analysis:
-        if analysis.expense_ratio_drag > 500:
-            score -= 20
-            steps.append("Consider switching high expense mutual funds (e.g. Regular plans > 1.0%) to Direct plans to save on commissions.")
-        
-        if len(analysis.overlap_warnings) > 0:
-            score -= (10 * len(analysis.overlap_warnings))
-            steps.append("You have overlapping stocks in your mutual funds. Consider consolidating them to reduce redundant exposure.")
-            
-    score = max(30, score)
+    investments = state.get("investments", [])
     
-    feedback = f"Hello there! Your Money Health Score is {score}/100. "
-    if score >= 80:
-        feedback += "You are doing fantastic! Just a few minor tweaks to optimize your wealth."
-    elif score >= 50:
-        feedback += "You're on the right track, but we can make your money work a bit harder for you. Let's look at reducing those hidden overlaps and fees!"
-    else:
-        feedback += "Don't worry, every smart investor starts somewhere. We've found some key areas like high expense ratios and duplicate holdings that we can fix together to boost your returns."
+    if not analysis:
+        return {"log": log_updates + ["Agent C (Strategist): No analysis available."]}
+
+    try:
+        llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.7)
+        structured_llm = llm.with_structured_output(StrategyPlan)
         
-    strategy = StrategyPlan(
-        health_score=score,
-        feedback=feedback,
-        rebalancing_steps=steps
-    )
-    
-    log_updates.append("Agent C (Strategist): Plan generated successfully.")
+        portfolio_summary = "\n".join([f"- {inv.fund_name}: ₹{inv.amount}" for inv in investments])
+        overlap_info = "\n".join([f"- {warn}" for warn in analysis.overlap_warnings])
+        
+        prompt = f"""
+        You are an expert Financial Mentor for The Economic Times (ET MoneyMentor Pro).
+        Review the following portfolio analysis and generate a personalized, encouraging strategy plan.
+        
+        Portfolio Details:
+        {portfolio_summary}
+        
+        Analysis Insights:
+        - Total Value: ₹{analysis.total_value}
+        - Total 5-Year Drag from High Expense Ratios (Regular Plans): ₹{analysis.potential_savings}
+        - Overlap Warnings:
+        {overlap_info if overlap_info else "- None"}
+        
+        Task:
+        1. Calculate a realistic 'Money Health Score' out of 100 based on the overlaps and expense drag. (Lower score if high overlaps and fees).
+        2. Write exactly 2-3 sentences of 'feedback' that is highly encouraging but sets a clear mentor tone. Act as a trusted advisor.
+        3. Provide 2-4 actionable 'rebalancing_steps' in simple language. If there are overlaps, explicitly suggest consolidating those specific funds. If there is high drag, suggest direct plans.
+        """
+        
+        strategy = structured_llm.invoke(prompt)
+        log_updates.append("Agent C (Strategist): Real-time Plan generated successfully.")
+        
+    except Exception as e:
+        log_updates.append(f"Agent C (Strategist): LLM failed, falling back to basic strategy. Error: {str(e)}")
+        strategy = StrategyPlan(
+            health_score=50,
+            feedback="We encountered a technical hurdle generating your mentor feedback, but saving on expense ratios is always a smart move.",
+            rebalancing_steps=["Consider moving from Regular to Direct plans."]
+        )
+        
     return {"strategy": strategy, "log": log_updates}
