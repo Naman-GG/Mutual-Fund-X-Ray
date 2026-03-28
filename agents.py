@@ -39,10 +39,13 @@ def extractor_node(state: PortfolioState):
         # Use structured output to force the LLM to return our Pydantic schema
         structured_llm = llm.with_structured_output(PortfolioExtract)
         
+        known_funds = ", ".join(MOCK_MARKET_DB.keys())
         prompt = f"""
         Extract the mutual fund investments from the following user portfolio text.
         For each investment, identify the exact fund name and the invested amount.
-        If the fund name matches something closely in the market, normalize it lightly but keep it accurate.
+        
+        IMPORTANT: Your extracted 'fund_name' MUST exactly match the spelling and casing of one of our known database funds if it is a close match.
+        Known Funds: {known_funds}
         
         User Text: {raw_input}
         """
@@ -126,7 +129,8 @@ def strategist_node(state: PortfolioState):
         return {"log": log_updates + ["Agent C (Strategist): No analysis available."]}
 
     try:
-        llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.7)
+        # Lowered temperature to 0.0 for deterministic scoring
+        llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.0)
         structured_llm = llm.with_structured_output(StrategyPlan)
         
         portfolio_summary = "\n".join([f"- {inv.fund_name}: ₹{inv.amount}" for inv in investments])
