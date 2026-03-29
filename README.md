@@ -23,7 +23,7 @@ Deploying the open-source ET MoneyMentor Pro is incredibly straightforward!
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/your-username/Mutual-Fund-X-Ray.git
+git clone https://github.com/Naman-GG/Mutual-Fund-X-Ray.git
 cd Mutual-Fund-X-Ray
 ```
 
