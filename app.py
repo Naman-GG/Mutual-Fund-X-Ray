@@ -308,3 +308,4 @@ if st.session_state.analysis_state:
                     st.markdown(response_text)
                     st.session_state.chat_messages.append({"role": "assistant", "content": response_text})
             
+st.markdown("<div style='text-align: center; color: #94A3B8; font-size: 0.95rem; margin-top: 5rem; margin-bottom: 2rem;'><strong>ET MoneyMentor Pro ✨</strong><br>Created with ❤️ by <strong>Team Calyx</strong></div>", unsafe_allow_html=True)
