@@ -2,10 +2,12 @@
 
 <p align="center">
   <a href="https://calyx-et-moneymentor.streamlit.app/" target="_blank">
-    <img src="qr_code.png" alt="Scan to Try ET MoneyMentor Pro" width="220" />
+    <img src="https://raw.githubusercontent.com/Naman-GG/Mutual-Fund-X-Ray/main/qr_code.png" alt="QR Code - ET MoneyMentor Pro" width="200" />
   </a>
+  <br><br>
+  <a href="https://calyx-et-moneymentor.streamlit.app/" target="_blank"><strong><big><big>Click Here To Try The Live App</big></big></strong></a>
   <br>
-  <a href="https://calyx-et-moneymentor.streamlit.app/" target="_blank"><strong>🚀 Click Here To Try The Live Mentor App!</strong></a>
+  The model is live and accessible at: <strong>https://calyx-et-moneymentor.streamlit.app/</strong>
 </p>
 
 ET MoneyMentor Pro is an accessible, highly friendly, and extremely powerful **Open-Source AI Portfolio Mentor** built for the **Economic Times AI Hackathon**. 
