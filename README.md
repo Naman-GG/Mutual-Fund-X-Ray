@@ -6,9 +6,11 @@
   </a>
   <br><br>
   <a href="https://calyx-et-moneymentor.streamlit.app/" target="_blank"><strong><big><big>Click Here To Try The Live App</big></big></strong></a>
-  <br>
-  The model is live and accessible at: <strong>https://calyx-et-moneymentor.streamlit.app/</strong>
 </p>
+
+<br>
+
+The model is live and accessible at: **https://calyx-et-moneymentor.streamlit.app/**
 
 ET MoneyMentor Pro is an accessible, highly friendly, and extremely powerful **Open-Source AI Portfolio Mentor** built for the **Economic Times AI Hackathon**. 
 
