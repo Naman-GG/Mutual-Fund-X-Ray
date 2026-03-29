@@ -1,4 +1,12 @@
-# 🧸 ET MoneyMentor Pro ✨
+# ET MoneyMentor Pro ✨
+
+<p align="center">
+  <a href="https://calyx-et-moneymentor.streamlit.app/" target="_blank">
+    <img src="qr_code.png" alt="Scan to Try ET MoneyMentor Pro" width="220" />
+  </a>
+  <br>
+  <a href="https://calyx-et-moneymentor.streamlit.app/" target="_blank"><strong>🚀 Click Here To Try The Live Mentor App!</strong></a>
+</p>
 
 ET MoneyMentor Pro is an accessible, highly friendly, and extremely powerful **Open-Source AI Portfolio Mentor** built for the **Economic Times AI Hackathon**. 
 
@@ -100,4 +108,6 @@ The following chronological sequence maps the overarching build process for the 
 * **`feat: mount Whisper-V3 Voice-to-Portfolio recording engine`**
   * Implemented Streamlit's cutting edge `st.audio_input` for zero-friction user narration.
   * Handled dynamic buffer intercept to `.wav` translation, firing off asynchronous transcriptions to `whisper-large-v3` with sub-1-second audio decoding. 
-* **`docs: update README with comprehensive setup and journey logs` (*latest*)**
+* **`fix: Streamlit Cloud native CSS bypass` (*latest*)**
+  * Repaired an issue where `.streamlit/` was ignored by git, depriving the Streamlit server of the Light-Mode CSS sequence.
+  * Explicitly embedded the "Made with ❤️ by Team Calyx" watermark signature onto the deployment dashboard directly matching the UI schema!
